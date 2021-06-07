@@ -36,8 +36,8 @@ jobs:
         name: 🌱 Set app name in environment
         run: echo "::set-output name=app_name::$(node -p -e "require('./capacitor.config.json').appName")"
 
-  prebuild-test:
-    name: 🔧 Pre Build
+  test:
+    name: 🧪 Test
     runs-on: ${{ matrix.os }}
     needs: environment
 
@@ -55,7 +55,7 @@ jobs:
         run: npm run test-ci
 
       - name: 📐 Lint
-        run: npm run test-ci
+        run: npm run lint-ci
 
       - name: 📦 Upload Artifact
         uses: actions/upload-artifact@v2
@@ -66,7 +66,7 @@ jobs:
   prebuild:
     name: 🔧 Pre Build
     runs-on: ${{ matrix.os }}
-    needs: [environment, prebuild-test]
+    needs: [environment, test]
 
     strategy:
       matrix:
