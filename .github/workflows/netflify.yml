@@ -51,7 +51,7 @@ jobs:
         run: npm ci
 
       - name: Install Netlify
-        run: npm install netlify-cli -g
+        run: npm install netlify-cli
 
       - name: Build site
         run: npm run build:prod
