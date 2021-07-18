@@ -2,25 +2,50 @@ name: Deploy to Netlify on pull requests
 
 on: [push, workflow_dispatch]
 
+env:
+  node_version: 14.x
+
 jobs:
+  environment:
+    name: 🌱 Load Environment
+    runs-on: macos-latest
+
+    steps:
+      - name: ⚙️ Node.js version used - ${{ env.node_version }}
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ env.node_version }}
+
+  test:
+    name: 🧪 Test
+    runs-on: ubuntu-latest
+    needs: environment
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: 🔧 Installation of dependencies
+        run: npm run install-test-dependencies && npm ci
+
+      - name: 🧪 Test CI
+        run: npm run test-ci
+
+      - name: 🧪 Lint CI
+        run: npm run lint-ci
+
+      - name: 📦 Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: '${{ runner.os }} - Lint Report'
+          path: ./lintReport.json
+
   build:
     runs-on: ubuntu-latest
+    needs: environment
 
     steps:
       # Checkout repo
       - uses: actions/checkout@v2
-
-      - name: Cache node modules
-        uses: actions/cache@v1
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-      - name: Node 14
-        uses: actions/setup-node@v1
-        with:
-          node-version: 14.x
 
       - name: Prepare
         run: npm ci
@@ -29,7 +54,7 @@ jobs:
         run: npm install netlify-cli -g
 
       - name: Build site
-        run: npm run build
+        run: npm run build:prod
 
       # Deploy the site with netlify-cli
       - name: Deploy Site
