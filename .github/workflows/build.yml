@@ -61,7 +61,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: '${{ runner.os }} - Lint Report'
-          path: $./lintReport.json
+          path: ./lintReport.json
 
   prebuild:
     name: 🔧 Pre Build
