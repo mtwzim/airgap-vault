@@ -87,7 +87,7 @@ jobs:
 
     strategy:
       matrix:
-        os: ['windows-latest', 'macos-latest']
+        os: ['ubuntu-latest', 'macos-latest']
 
     steps:
       - uses: actions/checkout@v2
