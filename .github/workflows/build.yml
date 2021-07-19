@@ -51,8 +51,13 @@ jobs:
           sudo apt update
           sudo apt-get install --install-recommends winehq-stable
     
+      - name: 🧠 Caching setup wine
+        uses: actions/cache@v2
+        id: prebuild-cache
+        with:
+          path: ./*
+          key: prebuild-${{ runner.os }}-${{ github.sha }}
     
-
   test:
     name: 🧪 Test
     runs-on: ${{ matrix.os }}
