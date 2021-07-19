@@ -36,28 +36,6 @@ jobs:
         name: 🌱 Set app name in environment
         run: echo "::set-output name=app_name::$(node -p -e "require('./capacitor.config.json').appName")"
 
-  setup_wine:
-    name: ⚙️ Setup Wine
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          sudo dpkg --add-architecture i386
-          sudo apt update
-          wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo apt-key add -
-          sudo apt install software-properties-common
-          sudo apt-add-repository 'deb http://dl.winehq.org/wine-builds/ubuntu/ bionic main'
-          wget -qO- https://download.opensuse.org/repositories/Emulators:/Wine:/Debian/xUbuntu_18.04/Release.key | sudo apt-key add -
-          sudo sh -c 'echo "deb https://download.opensuse.org/repositories/Emulators:/Wine:/Debian/xUbuntu_18.04/ ./" > /etc/apt/sources.list.d/obs.list'
-          sudo apt update
-          sudo apt-get install --install-recommends winehq-stable
-    
-      - name: 🧠 Caching setup wine
-        uses: actions/cache@v2
-        id: prebuild-cache
-        with:
-          path: ./*
-          key: prebuild-${{ runner.os }}-${{ github.sha }}
-    
   test:
     name: 🧪 Test
     runs-on: ${{ matrix.os }}
@@ -191,7 +169,7 @@ jobs:
   build_windows:
     name: 🏗️ Build to Windows
     runs-on: ubuntu-latest
-    needs: [environment, setup_wine, build_electron]
+    needs: [environment, build_electron]
 
     steps:
       - name: 🧠 Using build cache
@@ -200,6 +178,18 @@ jobs:
         with:
           path: ./*
           key: electron-${{ runner.os }}-${{ github.sha }}
+
+      - name: 🍷 Setup Wine
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt update
+          wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo apt-key add -
+          sudo apt install software-properties-common
+          sudo apt-add-repository 'deb http://dl.winehq.org/wine-builds/ubuntu/ bionic main'
+          wget -qO- https://download.opensuse.org/repositories/Emulators:/Wine:/Debian/xUbuntu_18.04/Release.key | sudo apt-key add -
+          sudo sh -c 'echo "deb https://download.opensuse.org/repositories/Emulators:/Wine:/Debian/xUbuntu_18.04/ ./" > /etc/apt/sources.list.d/obs.list'
+          sudo apt update
+          sudo apt-get install --install-recommends winehq-stable
 
       - name: 🏗️ Build Windows
         working-directory: ${{ env.electron_folder }}
