@@ -250,7 +250,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: '${{ needs.environment.outputs.app_name }} Linux ${{ needs.environment.outputs.package_version }}'
-          path: ${{ needs.environment.outputs.package_name }}-${{ needs.environment.outputs.package_version }}.AppImage
+          path: ${{ env.electron_folder }}/build/${{ needs.environment.outputs.package_name }}-${{ needs.environment.outputs.package_version }}.AppImage
 
   # Mobile
 
