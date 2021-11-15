@@ -244,6 +244,8 @@ jobs:
         working-directory: ${{ env.electron_folder }}
         run: yarn run build:linux
 
+      - run: ls
+
       - name: 📦 Upload Artifact
         uses: actions/upload-artifact@v2
         with:
