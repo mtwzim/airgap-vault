@@ -23,30 +23,26 @@ class WebViewEnvironment: NSObject, JSEnvironment, WKNavigationDelegate {
         
         defer {
             if runRef == nil {
-                onFinish(webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
+                webViewManager.onFinish(webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
             }
         }
         
         let resultID = await jsAsyncResult.createID()
         let script = """
-            function postMessage(message) {
-                window.webkit.messageHandlers.\(jsAsyncResult.id).postMessage({ ...message, id: "\(resultID)" });
-            };
-        
             execute(
                 \(try module.namespace ?? (try JSUndefined.value.toJSONString())),
                 '\(module.identifier)',
                 \(try action.toJSONString()),
                 function (result) {
-                    postMessage({ result: JSON.parse(JSON.stringify(result)) });
+                    postMessage("\(resultID)", { result: JSON.parse(JSON.stringify(result)) });
                 },
                 function (error) {
-                    postMessage({ error })
+                    postMessage("\(resultID)", { error })
                 }
             );
         """
         
-        webView.evaluateJavaScript(script, completionHandler: nil)
+        try await webView.evaluateJavaScriptAsync(script)
         guard let result = try await jsAsyncResult.awaitResultWithID(resultID) as? [String: Any] else {
             throw Error.invalidResult
         }
@@ -57,7 +53,7 @@ class WebViewEnvironment: NSObject, JSEnvironment, WKNavigationDelegate {
     func reset(runRef: String) async throws {
         let webViews = await webViewManager.getAll(for: runRef) ?? []
         for (webView, userContentController, jsAsyncResult) in webViews {
-            await onFinish(webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
+            await webViewManager.onFinish(webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
         }
         await webViewManager.remove(at: runRef)
     }
@@ -65,73 +61,18 @@ class WebViewEnvironment: NSObject, JSEnvironment, WKNavigationDelegate {
     func destroy() async throws {
         let webViews = await webViewManager.getAll()
         for (webView, userContentController, jsAsyncResult) in webViews {
-            await onFinish(webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
+            await webViewManager.onFinish(webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
         }
         await webViewManager.removeAll()
     }
     
-    @MainActor
-    private func getOrCreateWebView(for module: JSModule, runRef: String?) async throws -> (WKWebView, WKUserContentController, JSAsyncResult) {
-        guard let runRef = runRef, let webViewTuple = await webViewManager.get(for: runRef, and: module) else {
-            let jsAsyncResult = JSAsyncResult()
-            
-            let userContentController = WKUserContentController()
-            userContentController.add(jsAsyncResult)
-            
-            let webViewConfiguration = WKWebViewConfiguration()
-            webViewConfiguration.userContentController = userContentController
-            
-            let webView = WKWebView(frame: .zero, configuration: webViewConfiguration)
-            webView.navigationDelegate = self
-            
-            do {
-                guard let scriptSource = String(data: try fileExplorer.readIsolatedModulesScript(), encoding: .utf8) else {
-                    throw Error.invalidSource
-                }
-
-                try await webView.evaluateJavaScriptAsync(scriptSource)
-                
-                for source in try fileExplorer.readModuleSources(module) {
-                    guard let string = String(data: source, encoding: .utf8) else {
-                        throw Error.invalidSource
-                    }
-                    
-                    try await webView.evaluateJavaScriptAsync(string)
-                }
-                
-                if let runRef = runRef {
-                    await webViewManager.add(
-                        runRef: runRef,
-                        for: module,
-                        webView: webView,
-                        userContentController: userContentController,
-                        jsAsyncResult: jsAsyncResult
-                    )
-                }
-                
-                return (webView, userContentController, jsAsyncResult)
-            } catch {
-                onFinish(webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
-                throw error
-            }
-        }
-        
-        return webViewTuple
-    }
-    
-    @MainActor
-    private func onFinish(webView: WKWebView, userContentController: WKUserContentController, jsAsyncResult: JSAsyncResult) {
-        userContentController.remove(jsAsyncResult)
-        webView.stopLoading()
-        webView.scrollView.delegate = nil
-        webView.navigationDelegate = nil
-        if webView.superview != nil {
-            webView.removeFromSuperview()
-        }
+    private func getOrCreateWebView(for module: JSModule, runRef: String?) async throws -> WKWebViewExtended {
+        return try await webViewManager.get(for: runRef, and: module, using: self)
     }
     
     private actor WebViewManager {
-        private(set) var webViews: [String: RunManager] = [:]
+        private(set) var webViews: [String: [String: WKWebViewExtended]] = [:]
+        @MainActor private var activeTasks: [String: [String: Task<WKWebViewExtended, Swift.Error>]] = [:]
         
         func add(
             runRef: String,
@@ -140,19 +81,82 @@ class WebViewEnvironment: NSObject, JSEnvironment, WKNavigationDelegate {
             userContentController: WKUserContentController,
             jsAsyncResult: JSAsyncResult
         ) {
-            if webViews[runRef] == nil {
-                webViews[runRef] = .init()
-            }
-            
-            webViews[runRef]?.add(for: module, webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
+            webViews[runRef, setDefault: .init()][module.identifier] = (webView, userContentController, jsAsyncResult)
         }
         
-        func get(for runRef: String, and module: JSModule) -> (WKWebView, WKUserContentController, JSAsyncResult)? {
-            webViews[runRef]?.webViews[module.identifier]
+        @MainActor
+        func get(
+            for runRef: String?,
+            and module: JSModule,
+            using env: WebViewEnvironment
+        ) async throws -> WKWebViewExtended {
+            if let runRef = runRef, let activeTask = activeTasks[runRef]?[module.identifier] {
+                return try await activeTask.value
+            }
+            
+            let task = Task<WKWebViewExtended, Swift.Error> {
+                guard let runRef = runRef, let extendedWebView = await webViews[runRef]?[module.identifier] else {
+                    let jsAsyncResult = JSAsyncResult()
+                    
+                    let userContentController = WKUserContentController()
+                    userContentController.add(jsAsyncResult)
+                    
+                    let webViewConfiguration = WKWebViewConfiguration()
+                    webViewConfiguration.userContentController = userContentController
+                    
+                    let webView = WKWebView(frame: .zero, configuration: webViewConfiguration)
+                    webView.navigationDelegate = env
+                    
+                    do {
+                        guard let scriptSource = String(data: try env.fileExplorer.readIsolatedModulesScript(), encoding: .utf8) else {
+                            throw Error.invalidSource
+                        }
+                        
+                        try await webView.evaluateJavaScriptAsync(scriptSource)
+                        
+                        for source in try env.fileExplorer.readModuleSources(module) {
+                            guard let string = String(data: source, encoding: .utf8) else {
+                                throw Error.invalidSource
+                            }
+                            
+                            try await webView.evaluateJavaScriptAsync(string)
+                        }
+                        
+                        try await webView.evaluateJavaScriptAsync("""
+                            function postMessage(id, message) {
+                                window.webkit.messageHandlers.\(jsAsyncResult.id).postMessage({ ...message, id });
+                            };
+                        """)
+                        
+                        if let runRef = runRef {
+                            await add(
+                                runRef: runRef,
+                                for: module,
+                                webView: webView,
+                                userContentController: userContentController,
+                                jsAsyncResult: jsAsyncResult
+                            )
+                        }
+                        
+                        return (webView, userContentController, jsAsyncResult)
+                    } catch {
+                        onFinish(webView: webView, userContentController: userContentController, jsAsyncResult: jsAsyncResult)
+                        throw error
+                    }
+                }
+                
+                return extendedWebView
+            }
+            
+            if let runRef = runRef {
+                activeTasks[runRef, setDefault: .init()][module.identifier] = task
+            }
+            
+            return try await task.value
         }
         
         func getAll(for runRef: String) -> [(WKWebView, WKUserContentController, JSAsyncResult)]? {
-            guard let values = webViews[runRef]?.webViews.values else {
+            guard let values = webViews[runRef]?.values else {
                 return nil
             }
             
@@ -160,31 +164,31 @@ class WebViewEnvironment: NSObject, JSEnvironment, WKNavigationDelegate {
         }
         
         func getAll() -> [(WKWebView, WKUserContentController, JSAsyncResult)] {
-            webViews.values.flatMap { Array($0.webViews.values) }
+            webViews.values.flatMap { Array($0.values) }
         }
         
         func remove(at runRef: String) {
             webViews.removeValue(forKey: runRef)
+            Task { @MainActor in
+                activeTasks.removeValue(forKey: runRef)
+            }
         }
         
         func removeAll() {
             webViews.removeAll()
+            Task { @MainActor in
+                activeTasks.removeAll()
+            }
         }
         
-        class RunManager {
-            private(set) var webViews: [String: (WKWebView, WKUserContentController, JSAsyncResult)] = [:]
-            
-            func add(
-                for module: JSModule,
-                webView: WKWebView,
-                userContentController: WKUserContentController,
-                jsAsyncResult: JSAsyncResult
-            ) {
-                webViews[module.identifier] = (webView, userContentController, jsAsyncResult)
-            }
-            
-            func removeAll() {
-                webViews.removeAll()
+        @MainActor
+        func onFinish(webView: WKWebView, userContentController: WKUserContentController, jsAsyncResult: JSAsyncResult) {
+            userContentController.remove(jsAsyncResult)
+            webView.stopLoading()
+            webView.scrollView.delegate = nil
+            webView.navigationDelegate = nil
+            if webView.superview != nil {
+                webView.removeFromSuperview()
             }
         }
     }
@@ -193,4 +197,13 @@ class WebViewEnvironment: NSObject, JSEnvironment, WKNavigationDelegate {
         case invalidSource
         case invalidResult
     }
+    
+    private typealias WKWebViewExtended = (WKWebView, WKUserContentController, JSAsyncResult)
+}
+
+
+// MARK: Extensions
+
+private extension Dictionary where Value == String {
+    
 }

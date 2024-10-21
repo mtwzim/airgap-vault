@@ -16,13 +16,20 @@ import {
   STATUS_BAR_PLUGIN,
   FILESYSTEM_PLUGIN,
   UiEventService,
-  IsolatedModules,
   ISOLATED_MODULES_PLUGIN,
   Zip,
   ZIP_PLUGIN,
-  BaseModulesService
+  BaseModulesService,
+  BaseEnvironmentService,
+  isolatedModules
 } from '@airgap/angular-core'
-import { AirGapAngularNgRxModule, currencySymbolNgRxFacade, isolatedModulesDetailsNgRxFacade, isolatedModulesListNgRxFacade, isolatedModulesListPageNgRxFacade } from '@airgap/angular-ngrx'
+import {
+  AirGapAngularNgRxModule,
+  currencySymbolNgRxFacade,
+  isolatedModulesDetailsNgRxFacade,
+  isolatedModulesListNgRxFacade,
+  isolatedModulesListPageNgRxFacade
+} from '@airgap/angular-ngrx'
 import { PercentPipe } from '@angular/common'
 import { HttpClient, HttpClientModule } from '@angular/common/http'
 import { ErrorHandler, NgModule } from '@angular/core'
@@ -37,16 +44,24 @@ import { FilePicker } from '@capawesome/capacitor-file-picker'
 import { DeviceMotion } from '@ionic-native/device-motion/ngx'
 import { Diagnostic } from '@ionic-native/diagnostic/ngx'
 import { IonicModule, IonicRouteStrategy, Platform } from '@ionic/angular'
-import { IonicStorageModule } from '@ionic/storage'
+import { Drivers } from '@ionic/storage'
+import { IonicStorageModule } from '@ionic/storage-angular'
 import { EffectsModule } from '@ngrx/effects'
 import { StoreModule } from '@ngrx/store'
 import { TranslateLoader, TranslateModule } from '@ngx-translate/core'
+import CordovaSQLiteDriver from 'localforage-cordovasqlitedriver'
 
 import { AppRoutingModule } from './app-routing.module'
 import { AppComponent } from './app.component'
 import * as fromRoot from './app.reducers'
 import { CameraPreview, Environment, SaplingNative, SecurityUtils } from './capacitor-plugins/definitions'
-import { CAMERA_PREVIEW_PLUGIN, ENVIRONMENT_PLUGIN, FILE_PICKER_PLUGIN, SAPLING_PLUGIN, SECURITY_UTILS_PLUGIN } from './capacitor-plugins/injection-tokens'
+import {
+  CAMERA_PREVIEW_PLUGIN,
+  ENVIRONMENT_PLUGIN,
+  FILE_PICKER_PLUGIN,
+  SAPLING_PLUGIN,
+  SECURITY_UTILS_PLUGIN
+} from './capacitor-plugins/injection-tokens'
 import { appConfig } from './config/app-config'
 import { DistributionOnboardingPageModule } from './pages/distribution-onboarding/distribution-onboarding.module'
 import { IntroductionPageModule } from './pages/introduction/introduction.module'
@@ -75,6 +90,8 @@ import { OnboardingAdvancedModePageModule } from './pages/onboarding-advanced-mo
 import { OnboardingWelcomePageModule } from './pages/onboarding-welcome/onboarding-welcome.module'
 import { IsolatedModulesOnboardingPageModule } from './pages/isolated-modules-onboarding/isolated-modules-onboarding.module'
 import { VaultModulesService } from './services/modules/modules.service'
+import { VaultEnvironmentService } from './services/environment/vault-environment.service'
+import { SocialRecoveryImportShareService } from './social-recovery-import-share/social-recovery-import-share.service'
 
 export function createTranslateLoader(http: HttpClient): AirGapTranslateLoader {
   return new AirGapTranslateLoader(http, { prefix: './assets/i18n/', suffix: '.json' })
@@ -82,7 +99,6 @@ export function createTranslateLoader(http: HttpClient): AirGapTranslateLoader {
 
 @NgModule({
   declarations: [AppComponent],
-  entryComponents: [],
   imports: [
     BrowserModule,
     StoreModule.forRoot(fromRoot.reducers, {
@@ -94,7 +110,7 @@ export function createTranslateLoader(http: HttpClient): AirGapTranslateLoader {
       }
     }),
     EffectsModule.forRoot(),
-    IonicModule.forRoot(),
+    IonicModule.forRoot({ innerHTMLTemplatesEnabled: true }),
     AppRoutingModule,
     HttpClientModule,
     TranslateModule.forRoot({
@@ -106,7 +122,7 @@ export function createTranslateLoader(http: HttpClient): AirGapTranslateLoader {
     }),
     IonicStorageModule.forRoot({
       name: '__airgap_storage',
-      driverOrder: ['sqlite', 'localstorage']
+      driverOrder: [CordovaSQLiteDriver._driver, Drivers.LocalStorage]
     }),
     WarningModalPageModule,
     IntroductionPageModule,
@@ -140,10 +156,11 @@ export function createTranslateLoader(http: HttpClient): AirGapTranslateLoader {
     { provide: APP_CONFIG, useValue: appConfig },
     { provide: ZIP_PLUGIN, useValue: Zip },
     { provide: FILE_PICKER_PLUGIN, useValue: FilePicker },
-    { provide: ISOLATED_MODULES_PLUGIN, useValue: IsolatedModules },
+    { provide: ISOLATED_MODULES_PLUGIN, useFactory: isolatedModules, deps: [Platform] },
     { provide: ENVIRONMENT_PLUGIN, useValue: Environment },
     { provide: ErrorHandler, useClass: ErrorHandlerService },
     { provide: BaseModulesService, useClass: VaultModulesService },
+    { provide: BaseEnvironmentService, useClass: VaultEnvironmentService },
     Diagnostic,
     { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
     DeviceMotion,
@@ -169,6 +186,7 @@ export function createTranslateLoader(http: HttpClient): AirGapTranslateLoader {
     PercentPipe,
     SecureStorageFactoryDepHolder,
     CameraFactoryDepHolder,
+    SocialRecoveryImportShareService,
     {
       provide: SecureStorageService,
       useFactory: SecureStorageFactory,
