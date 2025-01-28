@@ -19,7 +19,7 @@ export class SecretItemComponent implements OnInit {
   @Input()
   public secret: MnemonicSecret
 
-  public activeWallets: { symbol: string, protocolIdentifier: ProtocolSymbols }[]
+  public activeWallets: { symbol: string; protocolIdentifier: ProtocolSymbols }[]
   public hasMoreWallets: number = 0
 
   public lifehashData: string = ''
@@ -44,27 +44,31 @@ export class SecretItemComponent implements OnInit {
 
     this.getWalletsFromSecret()
 
-    this.lifehashData = await this.lifehashService.generateLifehash(this.secret.fingerprint)
+    const bytes = this.secret.fingerprint
+      ? new Uint8Array(this.secret.fingerprint.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)))
+      : new Uint8Array()
+
+    this.lifehashData = await this.lifehashService.generateLifehash(bytes)
   }
 
   public async getWalletsFromSecret() {
     const activeWallets: AirGapWallet[] = this.secret.wallets.filter((wallet: AirGapWallet) => wallet.status === AirGapWalletStatus.ACTIVE)
-    const comparableActiveWallets: [string, AirGapWallet][] = await Promise.all(activeWallets.map(async (wallet: AirGapWallet) => {
-      return [await wallet.protocol.getName(), wallet] as [string, AirGapWallet]
-    }))
+    const comparableActiveWallets: [string, AirGapWallet][] = await Promise.all(
+      activeWallets.map(async (wallet: AirGapWallet) => {
+        return [await wallet.protocol.getName(), wallet] as [string, AirGapWallet]
+      })
+    )
     const sortedActiveWallets: AirGapWallet[] = comparableActiveWallets
       .sort((a: [string, AirGapWallet], b: [string, AirGapWallet]) => a[0].localeCompare(b[0])) // TODO: Use same order as common lib
       .map(([_, wallet]: [string, AirGapWallet]) => wallet)
-      
-    this.activeWallets = await Promise.all(sortedActiveWallets.map(async (wallet: AirGapWallet) => {
-      const [symbol, protocolIdentifier] = await Promise.all([
-        wallet.protocol.getSymbol(),
-        wallet.protocol.getIdentifier()
-      ])
 
-      return { symbol, protocolIdentifier }
-    }))
+    this.activeWallets = await Promise.all(
+      sortedActiveWallets.map(async (wallet: AirGapWallet) => {
+        const [symbol, protocolIdentifier] = await Promise.all([wallet.protocol.getSymbol(), wallet.protocol.getIdentifier()])
 
+        return { symbol, protocolIdentifier }
+      })
+    )
 
     if (this.activeWallets.length > 10) {
       this.hasMoreWallets = this.activeWallets.length - 10
@@ -72,11 +76,6 @@ export class SecretItemComponent implements OnInit {
     } else {
       this.hasMoreWallets = 0
     }
-  }
-
-  public goToEditSecret(ev: TouchEvent): void {
-    ev.stopPropagation()
-    this.navigationService.routeWithState('/secret-edit', { secret: this.secret }).catch(handleErrorLocal(ErrorCategory.IONIC_NAVIGATION))
   }
 
   public goToAccountsList(): void {

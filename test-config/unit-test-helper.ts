@@ -1,17 +1,20 @@
-import { APP_CONFIG, APP_LAUNCHER_PLUGIN } from '@airgap/angular-core'
+import { APP_CONFIG, APP_LAUNCHER_PLUGIN, BaseEnvironmentService } from '@airgap/angular-core'
 import { CommonModule } from '@angular/common'
 import { HttpClientModule } from '@angular/common/http'
 import { TestModuleMetadata } from '@angular/core/testing'
 import { FormsModule, ReactiveFormsModule } from '@angular/forms'
 import { RouterTestingModule } from '@angular/router/testing'
 import { AlertController, IonicModule, NavController, Platform, ToastController } from '@ionic/angular'
-import { IonicStorageModule, Storage } from '@ionic/storage'
+import { Drivers, Storage } from '@ionic/storage'
+import { IonicStorageModule } from '@ionic/storage-angular'
 import { StoreModule } from '@ngrx/store'
 import { TranslateFakeLoader, TranslateLoader, TranslateModule } from '@ngx-translate/core'
 
+import { ENVIRONMENT_PLUGIN } from '../src/app/capacitor-plugins/injection-tokens'
 import { ComponentsModule } from '../src/app/components/components.module'
 import { appConfig } from '../src/app/config/app-config'
 import { PipesModule } from '../src/app/pipes/pipes.module'
+import { VaultEnvironmentService } from '../src/app/services/environment/vault-environment.service'
 
 import {
   AlertControllerMock,
@@ -25,7 +28,7 @@ import {
   ToastControllerMock,
   ZipMock
 } from './ionic-mocks'
-import { AppInfoPluginMock, AppLauncherMock, SaplingPluginMock, SplashScreenMock, StatusBarMock } from './plugins-mocks'
+import { AppInfoPluginMock, AppLauncherMock, EnvironmentPluginMock, SaplingPluginMock, SplashScreenMock, StatusBarMock } from './plugins-mocks'
 import { StorageMock } from './storage-mock'
 
 export class UnitHelper {
@@ -43,7 +46,8 @@ export class UnitHelper {
     modalController: new ModalControllerMock(),
     clipboard: new ClipboardMock(),
     filesystem: new FilesystemMock(),
-    zip: new ZipMock()
+    zip: new ZipMock(),
+    environment: new EnvironmentPluginMock()
   }
 
   public testBed(testBed: TestModuleMetadata, useIonicOnlyTestBed: boolean = false): TestModuleMetadata {
@@ -58,7 +62,7 @@ export class UnitHelper {
       ComponentsModule,
       IonicStorageModule.forRoot({
         name: '__test_airgap_storage',
-        driverOrder: ['localstorage']
+        driverOrder: [Drivers.LocalStorage]
       }),
       TranslateModule.forRoot({
         loader: { provide: TranslateLoader, useClass: TranslateFakeLoader }
@@ -71,7 +75,9 @@ export class UnitHelper {
       { provide: ToastController, useValue: this.mockRefs.toastController },
       { provide: AlertController, useValue: this.mockRefs.alertController },
       { provide: APP_LAUNCHER_PLUGIN, useValue: this.mockRefs.appLauncher },
-      { provide: APP_CONFIG, useValue: appConfig }
+      { provide: APP_CONFIG, useValue: appConfig },
+      { provide: ENVIRONMENT_PLUGIN, useValue: this.mockRefs.environment },
+      { provide: BaseEnvironmentService, useClass: VaultEnvironmentService }
     ]
 
     if (!useIonicOnlyTestBed) {

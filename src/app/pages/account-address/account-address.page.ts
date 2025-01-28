@@ -20,7 +20,7 @@ import { AccountEditPopoverComponent } from './account-edit-popover/account-edit
 
 // TODO: add wallet definition into a service
 export const airgapwallet = {
-  icon: 'airgap-wallet-app-logo.png',
+  icon: 'airgap-wallet-app-logo.svg',
   name: 'AirGap Wallet',
   qrType: QRType.V3
 }
@@ -43,9 +43,21 @@ const specterwallet = {
   qrType: QRType.BC_UR
 }
 
+const nunchukwallet = {
+  icon: 'nunchuk.png',
+  name: 'Nunchuk Wallet',
+  qrType: QRType.BC_UR
+}
+
 const metamask = {
   icon: 'metamask.webp',
   name: 'MetaMask',
+  qrType: QRType.METAMASK
+}
+
+const imtoken = {
+  icon: 'imtoken-wallet.svg',
+  name: 'imToken',
   qrType: QRType.METAMASK
 }
 
@@ -126,13 +138,13 @@ export class AccountAddressPage {
 
       switch (protocolIdentifier) {
         case MainProtocolSymbols.BTC_SEGWIT:
-          this.syncOptions = [airgapwallet, bluewallet, sparrowwallet, specterwallet]
+          this.syncOptions = [airgapwallet, bluewallet, sparrowwallet, specterwallet, nunchukwallet]
           break
         case MainProtocolSymbols.ETH:
         case MainProtocolSymbols.OPTIMISM:
           this.syncOptions = [airgapwallet]
           if (this.wallet.isExtendedPublicKey) {
-            this.syncOptions.push(metamask, rabby)
+            this.syncOptions.push(metamask, imtoken, rabby)
           } else {
             this.showMetaMaskMigrationOnboarding = true
           }
